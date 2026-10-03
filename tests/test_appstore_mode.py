@@ -20,6 +20,8 @@ required = {
     "application identifier fallback": '@"application-identifier"',
     "team identifier fallback": '@"com.apple.developer.team-identifier"',
     "keychain group fallback": '@"keychain-access-groups"',
+    "explicit CodeDirectory identifier": '[NSString stringWithFormat:@"-I%@", bundleIdentifier]',
+    "ldid identifier argument": '[identifierArgument UTF8String]',
     "unsigned mode diagnostic": 'Unsigned IPA detected',
     "SINF injection": '[options setObject:applicationSINF forKey:kApplicationSINFKey];',
     "metadata injection": '[options setObject:iTunesMetadata forKey:kITunesMetadataKey];',
