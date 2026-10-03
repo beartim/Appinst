@@ -9,17 +9,21 @@ required = {
     "CFBundleExecutable parsing": 'kExecutableKey @"CFBundleExecutable"',
     "ApplicationSINF option key": 'kApplicationSINFKey @"ApplicationSINF"',
     "iTunesMetadata option key": 'kITunesMetadataKey @"iTunesMetadata"',
-    "App Store mode detection": 'BOOL appStoreIPAMode = (applicationSINF != nil && iTunesMetadata != nil);',
+    "Mach-O encryption-state detection": 'machOEncryptionState',
+    "decrypted App Store mode detection": 'BOOL decryptedAppStoreIPAMode',
+    "ldid discovery": 'findLdidPath',
+    "preserve entitlements": 'extractEntitlementsWithLdid',
+    "re-sign executable": 'fakeSignMainExecutableInIPA',
     "SINF injection": '[options setObject:applicationSINF forKey:kApplicationSINFKey];',
     "metadata injection": '[options setObject:iTunesMetadata forKey:kITunesMetadataKey];',
-    "mode diagnostic": 'Original App Store IPA mode enabled',
+    "decrypted mode diagnostic": 'Decrypted App Store IPA detected',
 }
 
 missing = [name for name, needle in required.items() if needle not in source]
 if missing:
-    print("Missing App Store IPA mode features:")
+    print("Missing App Store/decrypted IPA mode features:")
     for item in missing:
         print(f" - {item}")
     sys.exit(1)
 
-print("App Store IPA mode source checks passed.")
+print("App Store/decrypted IPA mode source checks passed.")
