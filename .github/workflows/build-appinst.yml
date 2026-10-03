@@ -99,8 +99,16 @@ jobs:
           test -d "$THEOS/sdks/iPhoneOS8.4.sdk"
           cd AppSync/appinst
           sed -i 's/iphone:clang:latest:5.0/iphone:clang:8.4:5.0/' Makefile
+          cat >> Makefile <<'EOF'
+          
+          # CI compatibility for modern Theos headers with the unmodified Xcode 6.4 SDK.
+          appinst_CFLAGS += -DTARGET_OS_SIMULATOR=0
+          appinst_CFLAGS += -DkCFCoreFoundationVersionNumber_iOS_8_0=1140.1
+          EOF
           grep -F 'TARGET = iphone:clang:8.4:5.0' Makefile
           grep -F 'ARCHS = armv7 armv7s arm64' Makefile
+          grep -F 'TARGET_OS_SIMULATOR=0' Makefile
+          grep -F 'kCFCoreFoundationVersionNumber_iOS_8_0=1140.1' Makefile
 
       - name: Build DEB
         run: |
