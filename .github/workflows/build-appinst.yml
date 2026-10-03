@@ -57,6 +57,11 @@ jobs:
           set -euxo pipefail
           python3 tools/apply_decrypted_appstore_fakesign.py AppSync/appinst/appinst.m
 
+      - name: Apply legacy POSIX header compatibility
+        run: |
+          set -euxo pipefail
+          python3 tools/apply_legacy_posix_headers.py AppSync/appinst/appinst.m
+
       - name: Test App Store IPA mode source
         run: |
           set -euxo pipefail
