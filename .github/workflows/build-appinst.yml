@@ -16,6 +16,7 @@ permissions:
 
 env:
   APPSYNC_REF: ${{ github.event.inputs.appsync_ref || '235aca6cddfbdc9fa87fcb5b2aec2df37ed6d65a' }}
+  LEGACY_SDK_REF: 2f350b3933de82fac53420c3bf7f0b33ab14b825
   THEOS: ${{ github.workspace }}/theos
 
 jobs:
@@ -54,6 +55,21 @@ jobs:
           theos-sdks: https://github.com/theos/sdks
           theos-sdks-branch: master
 
+      - name: Install Xcode 6.4 iOS 8.4 SDK
+        shell: bash
+        run: |
+          set -euxo pipefail
+          git clone --filter=blob:none --no-checkout https://github.com/EthanRDoesMC/sdks.git legacy-sdks
+          cd legacy-sdks
+          git sparse-checkout init --cone
+          git sparse-checkout set iPhoneOS8.4.sdk
+          git checkout --detach "$LEGACY_SDK_REF"
+          test -d iPhoneOS8.4.sdk
+          test -d iPhoneOS8.4.sdk/usr/lib
+          rm -rf "$THEOS/sdks/iPhoneOS8.4.sdk"
+          cp -a iPhoneOS8.4.sdk "$THEOS/sdks/"
+          test -d "$THEOS/sdks/iPhoneOS8.4.sdk"
+
       - name: Install legacy libzip static library
         shell: bash
         run: |
@@ -61,8 +77,8 @@ jobs:
           mkdir -p /tmp/libzip-deb
           LIBZIP_DEB=/tmp/libzip_0.11.2.deb
 
-          # This is the libzip package explicitly referenced by appinst's upstream README.
-          # Try HTTPS first and HTTP as a compatibility fallback.
+          # Upstream appinst explicitly uses BigBoss libzip 0.11.2 as its static library.
+          # BigBoss's HTTPS certificate is currently expired, so retain HTTP as fallback.
           if ! curl -fL --retry 3 --connect-timeout 20 \
               "https://apt.thebigboss.org/repofiles/cydia/debs2.0/libzip_0.11.2.deb" \
               -o "$LIBZIP_DEB"; then
@@ -77,13 +93,13 @@ jobs:
           install -m 0644 "$LIBZIP_A" "$THEOS/lib/libzip.a"
           ls -l "$THEOS/lib/libzip.a"
 
-      - name: Select legacy iOS 9.3 SDK
+      - name: Select legacy iOS 8.4 SDK
         run: |
           set -euxo pipefail
-          test -d "$THEOS/sdks/iPhoneOS9.3.sdk"
+          test -d "$THEOS/sdks/iPhoneOS8.4.sdk"
           cd AppSync/appinst
-          sed -i 's/iphone:clang:latest:5.0/iphone:clang:9.3:5.0/' Makefile
-          grep -F 'TARGET = iphone:clang:9.3:5.0' Makefile
+          sed -i 's/iphone:clang:latest:5.0/iphone:clang:8.4:5.0/' Makefile
+          grep -F 'TARGET = iphone:clang:8.4:5.0' Makefile
           grep -F 'ARCHS = armv7 armv7s arm64' Makefile
 
       - name: Build DEB
@@ -118,7 +134,7 @@ jobs:
 
           LIPO="$(find "$THEOS/toolchain" -type f \( -name llvm-lipo -o -name lipo \) -print -quit || true)"
           if [ -n "$LIPO" ]; then
-            "$LIPO" -info /tmp/appinst-pkg/usr/bin/appinst || true
+            "$LIPO" -info /tmp/appinst-pkg/usr/bin/appinst
           fi
 
           echo "DEB checksums:"
