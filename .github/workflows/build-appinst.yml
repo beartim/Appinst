@@ -1,0 +1,142 @@
+name: Build appinst DEB
+
+on:
+  workflow_dispatch:
+    inputs:
+      appsync_ref:
+        description: "AppSync commit/tag/branch to build appinst from"
+        required: false
+        default: "235aca6cddfbdc9fa87fcb5b2aec2df37ed6d65a"
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/build-appinst.yml"
+
+permissions:
+  contents: read
+
+env:
+  APPSYNC_REF: ${{ github.event.inputs.appsync_ref || '235aca6cddfbdc9fa87fcb5b2aec2df37ed6d65a' }}
+  THEOS: ${{ github.workspace }}/theos
+
+jobs:
+  build:
+    name: Build rootful appinst (iOS 5.0+, armv7/armv7s/arm64)
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout CI repository
+        uses: actions/checkout@v4
+
+      - name: Install host dependencies
+        run: |
+          set -euxo pipefail
+          sudo apt-get update
+          sudo apt-get install -y curl dpkg file xz-utils unzip
+
+      - name: Fetch appinst source
+        run: |
+          set -euxo pipefail
+          git clone --filter=blob:none --no-checkout https://github.com/akemin-dayo/AppSync.git AppSync
+          cd AppSync
+          git fetch --depth 1 origin "${APPSYNC_REF}"
+          git checkout --detach FETCH_HEAD
+          echo "Building AppSync source commit: $(git rev-parse HEAD)"
+          test -f appinst/Makefile
+          test -f appinst/appinst.m
+          test -f appinst/control
+
+      - name: Set up Theos
+        uses: Randomblock1/theos-action@v1
+        with:
+          theos-dir: ${{ github.workspace }}/theos
+          theos-src: https://github.com/theos/theos
+          theos-sdks: https://github.com/theos/sdks
+          theos-sdks-branch: master
+
+      - name: Install legacy libzip static library
+        shell: bash
+        run: |
+          set -euxo pipefail
+          mkdir -p /tmp/libzip-deb
+          LIBZIP_DEB=/tmp/libzip_0.11.2.deb
+
+          # This is the libzip package explicitly referenced by appinst's upstream README.
+          # Try HTTPS first and HTTP as a compatibility fallback.
+          if ! curl -fL --retry 3 --connect-timeout 20 \
+              "https://apt.thebigboss.org/repofiles/cydia/debs2.0/libzip_0.11.2.deb" \
+              -o "$LIBZIP_DEB"; then
+            curl -fL --retry 3 --connect-timeout 20 \
+              "http://apt.thebigboss.org/repofiles/cydia/debs2.0/libzip_0.11.2.deb" \
+              -o "$LIBZIP_DEB"
+          fi
+
+          dpkg-deb -x "$LIBZIP_DEB" /tmp/libzip-deb
+          LIBZIP_A="$(find /tmp/libzip-deb -type f -name libzip.a -print -quit)"
+          test -n "$LIBZIP_A"
+          install -m 0644 "$LIBZIP_A" "$THEOS/lib/libzip.a"
+          ls -l "$THEOS/lib/libzip.a"
+
+      - name: Select legacy iOS 9.3 SDK
+        run: |
+          set -euxo pipefail
+          test -d "$THEOS/sdks/iPhoneOS9.3.sdk"
+          cd AppSync/appinst
+          sed -i 's/iphone:clang:latest:5.0/iphone:clang:9.3:5.0/' Makefile
+          grep -F 'TARGET = iphone:clang:9.3:5.0' Makefile
+          grep -F 'ARCHS = armv7 armv7s arm64' Makefile
+
+      - name: Build DEB
+        run: |
+          set -euxo pipefail
+          cd AppSync/appinst
+          make clean package FINALPACKAGE=1 messages=yes
+
+      - name: Verify package and binary
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cd AppSync/appinst
+
+          MAIN_DEB=""
+          while IFS= read -r deb; do
+            if [ "$(dpkg-deb -f "$deb" Package)" = "ai.akemi.appinst" ]; then
+              MAIN_DEB="$deb"
+              break
+            fi
+          done < <(find debs -maxdepth 1 -type f -name '*.deb' -print | sort)
+
+          test -n "$MAIN_DEB"
+          echo "Main package: $MAIN_DEB"
+          dpkg-deb -f "$MAIN_DEB" Package Version Architecture Pre-Depends Depends
+
+          rm -rf /tmp/appinst-pkg
+          mkdir -p /tmp/appinst-pkg
+          dpkg-deb -x "$MAIN_DEB" /tmp/appinst-pkg
+          test -x /tmp/appinst-pkg/usr/bin/appinst
+          file /tmp/appinst-pkg/usr/bin/appinst
+
+          LIPO="$(find "$THEOS/toolchain" -type f \( -name llvm-lipo -o -name lipo \) -print -quit || true)"
+          if [ -n "$LIPO" ]; then
+            "$LIPO" -info /tmp/appinst-pkg/usr/bin/appinst || true
+          fi
+
+          echo "DEB checksums:"
+          sha256sum debs/*.deb
+
+      - name: Collect artifacts
+        run: |
+          set -euxo pipefail
+          mkdir -p artifacts
+          cp -v AppSync/appinst/debs/*.deb artifacts/
+          sha256sum artifacts/*.deb > artifacts/SHA256SUMS.txt
+
+      - name: Upload DEB artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: appinst-debs
+          path: artifacts/
+          if-no-files-found: error
+          retention-days: 30
